@@ -1,0 +1,30 @@
+datasource db {
+  provider = "sqlite"
+}
+
+generator client {
+  provider = "prisma-client-js"
+  engineType = "binary"
+}
+
+model Event {
+  id          String   @id @default(cuid())
+  sourceUid   String   @unique
+  title       String
+  description String?
+  startAt     DateTime
+  endAt       DateTime?
+  url         String?
+  lastSeenAt  DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Task {
+  id        String   @id @default(cuid())
+  title     String
+  done      Boolean  @default(false)
+  dueAt     DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
