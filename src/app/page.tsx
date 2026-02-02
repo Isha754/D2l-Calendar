@@ -69,8 +69,8 @@ const toDateInput = (value: Date) => {
 };
 
 const classColorPalette = [
-  "bg-[#0f1b1d]",
-  "bg-[#c1735f]",
+  "bg-[#1E1E1E]",
+  "bg-[#C79AA5]",
   "bg-[#8b5cf6]",
   "bg-[#2563eb]",
   "bg-[#16a34a]",
@@ -99,6 +99,7 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [isErrorMessage, setIsErrorMessage] = useState(false);
   const [viewDate, setViewDate] = useState(() => new Date());
   const [selectedDate, setSelectedDate] = useState(() => new Date());
   const [taskTitle, setTaskTitle] = useState("");
@@ -112,7 +113,18 @@ export default function Home() {
   const [eventClass, setEventClass] = useState("");
   const [isAddEventOpen, setIsAddEventOpen] = useState(false);
   const [isClassManagerOpen, setIsClassManagerOpen] = useState(false);
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [sidebarMode, setSidebarMode] = useState<"day" | "tasks" | "classes">(
+    "day"
+  );
+  const [expandedClassIds, setExpandedClassIds] = useState<Set<string>>(
+    () => new Set()
+  );
+  const [isEventPopupOpen, setIsEventPopupOpen] = useState(false);
+  const [activeEvent, setActiveEvent] = useState<EventItem | null>(null);
+  const [hoveredWeekIndex, setHoveredWeekIndex] = useState<number | null>(null);
+  const [isDayPopupOpen, setIsDayPopupOpen] = useState(false);
+  const [dayPopupEvents, setDayPopupEvents] = useState<EventItem[]>([]);
   const [classFilter, setClassFilter] = useState("");
   const [expandedEventIds, setExpandedEventIds] = useState<Set<string>>(
     () => new Set()
@@ -129,6 +141,7 @@ export default function Home() {
   const fetchEvents = async () => {
     setIsLoading(true);
     setMessage(null);
+    setIsErrorMessage(false);
     try {
       const res = await fetch("/api/events");
       if (!res.ok) {
@@ -138,6 +151,7 @@ export default function Home() {
       setEvents(data.events ?? []);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Something went wrong.");
+      setIsErrorMessage(true);
     } finally {
       setIsLoading(false);
     }
@@ -153,6 +167,7 @@ export default function Home() {
       setTasks(data.tasks ?? []);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Failed to load tasks.");
+      setIsErrorMessage(true);
     }
   };
 
@@ -290,6 +305,7 @@ export default function Home() {
   const syncCalendar = async () => {
     setIsSyncing(true);
     setMessage(null);
+    setIsErrorMessage(false);
     try {
       const res = await fetch("/api/sync", { method: "POST" });
       const data = await res.json();
@@ -297,6 +313,7 @@ export default function Home() {
         throw new Error(data?.error ?? "Sync failed.");
       }
       setMessage(`Synced ${data.synced ?? 0} event(s) from D2L.`);
+      setIsErrorMessage(false);
       const now = new Date().toISOString();
       setLastSyncAt(now);
       if (typeof window !== "undefined") {
@@ -306,6 +323,7 @@ export default function Home() {
       await fetchTasks();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Sync failed.");
+      setIsErrorMessage(true);
     } finally {
       setIsSyncing(false);
     }
@@ -327,8 +345,11 @@ export default function Home() {
       setTasks((prev) => [data.task!, ...prev]);
       setTaskTitle("");
       setTaskClass("");
+      setMessage(null);
+      setIsErrorMessage(false);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Failed to add task.");
+      setIsErrorMessage(true);
     }
   };
 
@@ -347,8 +368,11 @@ export default function Home() {
       setTasks((prev) =>
         prev.map((task) => (task.id === id ? data.task! : task))
       );
+      setMessage(null);
+      setIsErrorMessage(false);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Failed to update task.");
+      setIsErrorMessage(true);
     }
   };
 
@@ -362,8 +386,11 @@ export default function Home() {
         throw new Error(data.error ?? "Failed to remove task.");
       }
       setTasks((prev) => prev.filter((task) => task.id !== id));
+      setMessage(null);
+      setIsErrorMessage(false);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Failed to remove task.");
+      setIsErrorMessage(true);
     }
   };
 
@@ -371,6 +398,7 @@ export default function Home() {
     const title = eventTitle.trim();
     if (!title || !eventDate) {
       setMessage("Event title and date are required.");
+      setIsErrorMessage(true);
       return;
     }
     const startAt = `${eventDate}T${eventTime || "09:00"}:00`;
@@ -398,8 +426,10 @@ export default function Home() {
       setEventClass("");
       setIsAddEventOpen(false);
       setMessage("Event added.");
+      setIsErrorMessage(false);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Failed to add event.");
+      setIsErrorMessage(true);
     }
   };
 
@@ -413,11 +443,39 @@ export default function Home() {
         throw new Error(data.error ?? "Failed to remove event.");
       }
       setEvents((prev) => prev.filter((event) => event.id !== id));
+      setMessage(null);
+      setIsErrorMessage(false);
     } catch (error) {
       setMessage(
         error instanceof Error ? error.message : "Failed to remove event."
       );
+      setIsErrorMessage(true);
     }
+  };
+
+  const openEventPopup = (event: EventItem) => {
+    setSelectedDate(new Date(event.startAt));
+    setSidebarMode("day");
+    setIsSidebarOpen(true);
+    setActiveEvent(event);
+    setIsEventPopupOpen(true);
+  };
+
+  const openDayPopup = (events: EventItem[]) => {
+    setDayPopupEvents(events);
+    setIsDayPopupOpen(true);
+  };
+
+  const toggleClassExpand = (id: string) => {
+    setExpandedClassIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
   };
 
   const toggleEventDetails = (id: string) => {
@@ -436,10 +494,12 @@ export default function Home() {
     try {
       await navigator.clipboard.writeText(url);
       setMessage("Link copied to clipboard.");
+      setIsErrorMessage(false);
     } catch (error) {
       setMessage(
         error instanceof Error ? error.message : "Failed to copy link."
       );
+      setIsErrorMessage(true);
     }
   };
 
@@ -483,6 +543,7 @@ export default function Home() {
     }
   }, []);
 
+
   useEffect(() => {
     syncClassesFromItems(events);
   }, [events, blockedClassNames]);
@@ -511,6 +572,8 @@ export default function Home() {
         const today = new Date();
         setViewDate(new Date(today.getFullYear(), today.getMonth(), 1));
         setSelectedDate(today);
+        setSidebarMode("day");
+        setIsSidebarOpen(true);
       }
     };
     window.addEventListener("keydown", handleKeyDown);
@@ -541,14 +604,6 @@ export default function Home() {
     return events.filter((event) => event.className === classFilter);
   }, [classFilter, events]);
 
-  const filteredTasks = useMemo(() => {
-    if (!classFilter) return tasks;
-    if (classFilter === "__none__") {
-      return tasks.filter((task) => !task.className);
-    }
-    return tasks.filter((task) => task.className === classFilter);
-  }, [classFilter, tasks]);
-
   const eventsByDay = useMemo(() => {
     const map = new Map<string, EventItem[]>();
     for (const event of filteredEvents) {
@@ -567,24 +622,6 @@ export default function Home() {
   const selectedEvents = eventsByDay.get(selectedKey) ?? [];
   const totalEventCount = events.length;
   const filteredEventCount = filteredEvents.length;
-  const checklistItems = [
-    ...selectedEvents.map((event) => ({
-      id: `event-${event.id}`,
-      title: event.title,
-      done: false,
-      source: "event" as const,
-      time: event.startAt,
-      className: event.className ?? null,
-    })),
-    ...filteredTasks.map((task) => ({
-      id: task.id,
-      title: task.title,
-      done: task.done,
-      source: "task" as const,
-      time: task.createdAt,
-      className: task.className ?? null,
-    })),
-  ];
 
   const sortedClasses = useMemo(
     () =>
@@ -593,6 +630,31 @@ export default function Home() {
       ),
     [classes]
   );
+
+  const eventsByClassName = useMemo(() => {
+    const map = new Map<string, EventItem[]>();
+    events.forEach((event) => {
+      if (!event.className) return;
+      const list = map.get(event.className) ?? [];
+      list.push(event);
+      map.set(event.className, list);
+    });
+    for (const [, list] of map) {
+      list.sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime());
+    }
+    return map;
+  }, [events]);
+
+  const upcomingByClass = useMemo(() => {
+    const now = Date.now();
+    const map = new Map<string, EventItem | null>();
+    sortedClasses.forEach((item) => {
+      const list = eventsByClassName.get(item.name) ?? [];
+      const next = list.find((event) => new Date(event.startAt).getTime() >= now) ?? null;
+      map.set(item.name, next);
+    });
+    return map;
+  }, [eventsByClassName, sortedClasses]);
 
   const goToPreviousMonth = () => {
     setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth() - 1, 1));
@@ -605,352 +667,326 @@ export default function Home() {
   const monthLabel = `${monthNames[viewDate.getMonth()]} ${viewDate.getFullYear()}`;
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-[#f7f1e6] text-[#0f1b1d]">
-      <div className="pointer-events-none absolute -top-28 right-[-12%] h-80 w-80 rounded-full bg-[#ffd18b]/50 blur-3xl" />
-      <div className="pointer-events-none absolute bottom-[-20%] left-[-10%] h-96 w-96 rounded-full bg-[#8fd3c8]/50 blur-3xl" />
+    <div
+      className="relative h-screen overflow-hidden bg-[#C8BDD6] text-[#1E1E1E]"
+      style={{
+        fontFamily:
+          '"Segoe UI", "Segoe UI Emoji", "Segoe UI Symbol", "Apple Color Emoji", "Noto Color Emoji", sans-serif',
+      }}
+    >
+      <div className="pointer-events-none absolute -top-28 right-[-12%] h-80 w-80 rounded-full bg-[#C79AA5]/50 blur-3xl" />
+      <div className="pointer-events-none absolute bottom-[-20%] left-[-10%] h-96 w-96 rounded-full bg-[#B9AFC8]/50 blur-3xl" />
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(1200px_circle_at_10%_10%,rgba(255,255,255,0.7),transparent)]" />
 
       <main
-        className={`relative mx-auto flex min-h-screen w-full max-w-[1200px] flex-col gap-10 px-6 pb-20 pt-16 sm:px-10 xl:max-w-[1400px] 2xl:max-w-[1600px] ${
-          isSidebarOpen ? "xl:pr-[440px]" : ""
+        className={`relative mx-auto grid h-full w-full max-w-[1700px] grid-cols-1 gap-6 px-4 pb-6 pt-6 sm:px-8 ${
+          isSidebarOpen
+            ? "lg:grid-cols-[320px_minmax(0,1fr)]"
+            : "lg:grid-cols-[88px_minmax(0,1fr)]"
         }`}
       >
-        <header className="relative z-10 flex flex-col gap-4 rounded-3xl border border-[#e2d8c8] bg-white/70 px-6 py-5 shadow-[0_16px_40px_rgba(15,27,29,0.08)] backdrop-blur sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#0f1b1d] text-xs font-semibold uppercase tracking-[0.2em] text-[#f7f1e6]">
-              D2L
-            </div>
-            <h1 className="text-2xl font-semibold text-[#0f1b1d] font-[var(--font-display)] sm:text-3xl">
-              D2L Calendar
-            </h1>
-          </div>
-
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
-            <button
-              type="button"
-              className="flex h-11 w-11 items-center justify-center rounded-full border border-[#d1c2ae] text-[#3d4b4f] transition hover:-translate-y-0.5 hover:border-[#0f1b1d] hover:text-[#0f1b1d]"
-              onClick={() => setIsSidebarOpen((prev) => !prev)}
-              aria-label="Toggle sidebar"
-            >
-              <svg
-                viewBox="0 0 24 24"
-                aria-hidden="true"
-                className="h-5 w-5"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-              >
-                <path d="M4 6h16" />
-                <path d="M4 12h16" />
-                <path d="M4 18h16" />
-              </svg>
-            </button>
-            <button
-              type="button"
-              className="rounded-full border border-[#0f1b1d] px-5 py-3 text-sm font-semibold uppercase tracking-[0.2em] transition hover:-translate-y-0.5 hover:bg-[#0f1b1d] hover:text-[#f7f1e6]"
-              onClick={syncCalendar}
-              disabled={isSyncing}
-            >
-              {isSyncing ? "Syncing..." : "Sync D2L"}
-            </button>
-            <button
-              type="button"
-              className="rounded-full border border-[#8c9a9e] px-5 py-3 text-sm font-semibold uppercase tracking-[0.2em] text-[#3d4b4f] transition hover:-translate-y-0.5 hover:border-[#0f1b1d] hover:text-[#0f1b1d]"
-              onClick={fetchEvents}
-              disabled={isLoading}
-            >
-              {isLoading ? "Refreshing..." : "Refresh"}
-            </button>
-          </div>
-        </header>
-
-        <section className="grid gap-8">
-          <div className="rounded-3xl border border-[#e2d8c8] bg-white/80 p-7 shadow-[0_20px_60px_rgba(15,27,29,0.12)] backdrop-blur xl:p-8">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex items-center gap-3">
-                <button
-                  className="rounded-full border border-[#d1c2ae] px-3 py-2 text-sm font-semibold text-[#3d4b4f] transition hover:border-[#0f1b1d] hover:text-[#0f1b1d]"
-                  onClick={goToPreviousMonth}
-                >
-                  Prev
-                </button>
-                <button
-                  className="rounded-full border border-[#d1c2ae] px-3 py-2 text-sm font-semibold text-[#3d4b4f] transition hover:border-[#0f1b1d] hover:text-[#0f1b1d]"
-                  onClick={() => {
-                    const today = new Date();
-                    setViewDate(new Date(today.getFullYear(), today.getMonth(), 1));
-                    setSelectedDate(today);
-                  }}
-                >
-                  Today
-                </button>
-                <h2 className="text-2xl font-semibold text-[#0f1b1d] font-[var(--font-display)]">
-                  {monthLabel}
-                </h2>
-                <button
-                  className="rounded-full border border-[#d1c2ae] px-3 py-2 text-sm font-semibold text-[#3d4b4f] transition hover:border-[#0f1b1d] hover:text-[#0f1b1d]"
-                  onClick={goToNextMonth}
-                >
-                  Next
-                </button>
+        <aside className="hidden lg:flex min-w-[300px] flex-col gap-5 rounded-3xl border border-[#E6E6E2] bg-[#F4F3EF]/85 p-5 shadow-[0_16px_40px_rgba(15,27,29,0.08)] backdrop-blur overflow-hidden">
+          {!isSidebarOpen ? (
+            <div className="flex h-full flex-col items-center gap-4">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#1E1E1E] text-xs font-semibold uppercase tracking-[0.2em] text-[#F4F3EF]">
+                D2L
               </div>
-              <div className="text-sm text-[#516164]">
-                {filteredEventCount} event(s)
-                {classFilter && (
-                  <span className="text-[#8c9a9e]"> · {totalEventCount} total</span>
-                )}
-              </div>
-            </div>
-
-            <div className="mt-6 grid grid-cols-7 gap-2 text-xs uppercase tracking-[0.2em] text-[#748286]">
-              {weekDays.map((day) => (
-                <div key={day} className="text-center">
-                  {day}
-                </div>
-              ))}
-            </div>
-
-            <div className="mt-4 grid grid-cols-7 gap-2">
-              {days.map((day, index) => {
-                const key = toDateKey(day);
-                const dayEvents = eventsByDay.get(key) ?? [];
-                const isCurrentMonth = day.getMonth() === viewDate.getMonth();
-                const isSelected = key === selectedKey;
-                const isToday = key === toDateKey(new Date());
-
-                return (
-                  <button
-                    key={`${key}-${index}`}
-                    className={`group flex min-h-[128px] flex-col gap-2 rounded-2xl border p-3 text-left transition ${
-                      isSelected
-                        ? "border-[#0f1b1d] bg-[#0f1b1d] text-[#f7f1e6]"
-                        : "border-[#efe6d9] bg-white/60 text-[#0f1b1d] hover:border-[#0f1b1d]"
-                    } ${isCurrentMonth ? "opacity-100" : "opacity-45"} animate-[rise_0.6s_ease-out]`}
-                    style={{ animationDelay: `${index * 12}ms` }}
-                    onClick={() => setSelectedDate(day)}
-                  >
-                    <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-[0.2em]">
-                      <span>{day.getDate()}</span>
-                      {isToday && (
-                        <span
-                          className={`rounded-full px-2 py-0.5 text-[10px] ${
-                            isSelected
-                              ? "bg-[#f7f1e6] text-[#0f1b1d]"
-                              : "bg-[#0f1b1d] text-[#f7f1e6]"
-                          }`}
-                        >
-                          Today
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex flex-1 flex-col gap-2">
-                      {dayEvents.slice(0, 2).map((event) => (
-                        <div
-                          key={event.id}
-                          className={`rounded-lg px-2 py-1 text-xs ${
-                            isSelected
-                              ? "bg-[#f7f1e6]/20 text-[#f7f1e6]"
-                              : "bg-[#f0e6d6] text-[#2c3a3d]"
-                          }`}
-                        >
-                          <div className="flex items-center gap-2">
-                            {event.className && (
-                              <span
-                                className={`h-2 w-2 rounded-full ${getClassColor(
-                                  event.className
-                                )}`}
-                              />
-                            )}
-                            <p className="truncate font-semibold">{event.title}</p>
-                          </div>
-                          <p className="text-[10px] opacity-70">
-                            {formatTime(event.startAt)}
-                          </p>
-                        </div>
-                      ))}
-                      {dayEvents.length > 2 && (
-                        <p className="text-[10px] uppercase tracking-[0.2em] opacity-70">
-                          +{dayEvents.length - 2} more
-                        </p>
-                      )}
-                      {dayEvents.length === 0 && (
-                        <p className="text-[10px] uppercase tracking-[0.2em] opacity-50">
-                          Open
-                        </p>
-                      )}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          <aside className="hidden" />
-        </section>
-      </main>
-
-      {isSidebarOpen && (
-        <div className="fixed right-0 top-0 z-40 hidden h-full w-full max-w-[420px] overflow-y-auto border-l border-[#e2d8c8] bg-[#f7f1e6] p-6 xl:block">
-          <div className="flex items-center justify-between">
-            <p className="text-sm uppercase tracking-[0.3em] text-[#6b7a7e]">
-              Sidebar
-            </p>
-            <button
-              className="rounded-full border border-[#d1c2ae] px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-[#3d4b4f] transition hover:border-[#0f1b1d] hover:text-[#0f1b1d]"
-              onClick={() => setIsSidebarOpen(false)}
-            >
-              Close
-            </button>
-          </div>
-
-          <div className="mt-4 rounded-2xl border border-[#efe6d9] bg-white/80 p-4">
-            <p className="text-xs uppercase tracking-[0.2em] text-[#6b7a7e]">
-              Filter by class
-            </p>
-            <select
-              value={classFilter}
-              onChange={(event) => setClassFilter(event.target.value)}
-              className="mt-2 w-full rounded-full border border-[#d1c2ae] bg-white px-4 py-2 text-sm text-[#2c3a3d] focus:border-[#0f1b1d] focus:outline-none"
-            >
-              <option value="">All classes</option>
-              <option value="__none__">No class</option>
-              {sortedClasses.map((item) => (
-                <option key={item.id} value={item.name} title={item.name}>
-                  {truncateLabel(item.name)}
-                </option>
-              ))}
-            </select>
-            <button
-              className="mt-3 w-full rounded-full border border-[#0f1b1d] px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-[#0f1b1d] transition hover:-translate-y-0.5 hover:bg-[#0f1b1d] hover:text-[#f7f1e6]"
-              onClick={() => setIsClassManagerOpen(true)}
-            >
-              Manage classes
-            </button>
-          </div>
-
-          <div className="mt-6 flex flex-col gap-4">
-              <div className="rounded-3xl border border-[#e2d8c8] bg-white/80 p-6 shadow-[0_18px_45px_rgba(15,27,29,0.1)] backdrop-blur">
-              <h3 className="text-xl font-semibold text-[#0f1b1d] font-[var(--font-display)]">
-                {monthNames[selectedDate.getMonth()]} {selectedDate.getDate()}
-              </h3>
-              <p className="text-sm uppercase tracking-[0.2em] text-[#6b7a7e]">
-                {selectedEvents.length} event(s) selected
-              </p>
               <div className="mt-4 flex flex-col gap-3">
-                {selectedEvents.length === 0 && (
-                  <p className="text-sm text-[#5a6a6e]">
-                    No events for this day. Perfect time to breathe.
-                  </p>
-                )}
-                {selectedEvents.map((event, index) => (
-                  <div
-                    key={event.id}
-                    className="rounded-2xl border border-[#efe6d9] bg-white px-4 py-3 text-sm text-[#2c3a3d] animate-[rise_0.6s_ease-out]"
-                    style={{ animationDelay: `${index * 40}ms` }}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSidebarMode("day");
+                    setIsSidebarOpen(true);
+                  }}
+                  className="flex h-12 w-12 items-center justify-center rounded-2xl border border-[#E6E6E2] bg-[#F4F3EF] text-xl text-[#1E1E1E] hover:border-[#1E1E1E]"
+                  aria-label="Calendar"
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                    className="h-5 w-5"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
                   >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                          <div className="flex items-center gap-2">
-                            {event.className && (
-                              <span
-                                className={`h-2.5 w-2.5 rounded-full ${getClassColor(
-                                  event.className
-                                )}`}
-                              />
-                            )}
-                            <p className="font-semibold">
-                              {event.title} -{" "}
+                    <rect x="3" y="4" width="18" height="18" rx="3" />
+                    <path d="M8 2v4M16 2v4M3 10h18" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSidebarMode("tasks");
+                    setIsSidebarOpen(true);
+                  }}
+                  className="flex h-12 w-12 items-center justify-center rounded-2xl border border-[#E6E6E2] bg-[#F4F3EF] text-xl text-[#1E1E1E] hover:border-[#1E1E1E]"
+                  aria-label="Tasks"
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                    className="h-5 w-5"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <rect x="3" y="3" width="18" height="18" rx="4" />
+                    <path d="m7 12 3 3 7-7" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSidebarMode("classes");
+                    setIsSidebarOpen(true);
+                  }}
+                  className="flex h-12 w-12 items-center justify-center rounded-2xl border border-[#E6E6E2] bg-[#F4F3EF] text-xl text-[#1E1E1E] hover:border-[#1E1E1E]"
+                  aria-label="Classes"
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                    className="h-5 w-5"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M22 10 12 4 2 10l10 6 10-6Z" />
+                    <path d="M6 12v5c0 2 3 3 6 3s6-1 6-3v-5" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#1E1E1E] text-xs font-semibold uppercase tracking-[0.2em] text-[#F4F3EF]">
+                    D2L
+                  </div>
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.2em] text-[#8C8C8C]">
+                      Planner
+                    </p>
+                    <p className="text-lg font-semibold text-[#1E1E1E] font-[var(--font-display)]">
+                      Calendar
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="flex h-9 w-9 items-center justify-center rounded-full border border-[#E6E6E2] text-[#4A4A4A] transition hover:-translate-y-0.5 hover:border-[#1E1E1E] hover:text-[#1E1E1E]"
+                  onClick={() => setIsSidebarOpen(false)}
+                  aria-label="Collapse sidebar"
+                >
+                  X
+                </button>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSidebarMode("day")}
+                  className={`flex-1 rounded-full border px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.2em] ${
+                    sidebarMode === "day"
+                      ? "border-[#1E1E1E] bg-[#1E1E1E] text-[#F4F3EF]"
+                      : "border-[#E6E6E2] text-[#4A4A4A] hover:border-[#1E1E1E]"
+                  }`}
+                >
+                  <span className="inline-flex items-center gap-2">
+                    <svg
+                      viewBox="0 0 24 24"
+                      aria-hidden="true"
+                      className="h-3.5 w-3.5"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <rect x="3" y="4" width="18" height="18" rx="3" />
+                      <path d="M8 2v4M16 2v4M3 10h18" />
+                    </svg>
+                    Day
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSidebarMode("tasks")}
+                  className={`flex-1 rounded-full border px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.2em] ${
+                    sidebarMode === "tasks"
+                      ? "border-[#1E1E1E] bg-[#1E1E1E] text-[#F4F3EF]"
+                      : "border-[#E6E6E2] text-[#4A4A4A] hover:border-[#1E1E1E]"
+                  }`}
+                >
+                  <span className="inline-flex items-center gap-2">
+                    <svg
+                      viewBox="0 0 24 24"
+                      aria-hidden="true"
+                      className="h-3.5 w-3.5"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <rect x="3" y="3" width="18" height="18" rx="4" />
+                      <path d="m7 12 3 3 7-7" />
+                    </svg>
+                    Tasks
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSidebarMode("classes")}
+                  className={`flex-1 rounded-full border px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.2em] ${
+                    sidebarMode === "classes"
+                      ? "border-[#1E1E1E] bg-[#1E1E1E] text-[#F4F3EF]"
+                      : "border-[#E6E6E2] text-[#4A4A4A] hover:border-[#1E1E1E]"
+                  }`}
+                >
+                  <span className="inline-flex items-center gap-2">
+                    <svg
+                      viewBox="0 0 24 24"
+                      aria-hidden="true"
+                      className="h-3.5 w-3.5"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M22 10 12 4 2 10l10 6 10-6Z" />
+                      <path d="M6 12v5c0 2 3 3 6 3s6-1 6-3v-5" />
+                    </svg>
+                    Classes
+                  </span>
+                </button>
+              </div>
+
+              {sidebarMode === "day" && (
+                <div className="rounded-3xl border border-[#E6E6E2] bg-[#F4F3EF]/95 p-5 shadow-[0_18px_45px_rgba(15,27,29,0.1)] backdrop-blur">
+                  <div className="mb-4">
+                    <p className="text-xs uppercase tracking-[0.2em] text-[#8C8C8C]">
+                      {selectedDate.toLocaleDateString([], { weekday: "short" })} ·{" "}
+                      {selectedDate.toLocaleDateString([], {
+                        month: "short",
+                        day: "numeric",
+                      })}
+                    </p>
+                    <h3 className="text-lg font-semibold text-[#1E1E1E] font-[var(--font-display)]">
+                      Day Details
+                    </h3>
+                  </div>
+                  {selectedEvents.length === 0 && (
+                    <p className="text-sm text-[#8C8C8C]">No events for this day.</p>
+                  )}
+                  <div className="flex flex-col gap-3">
+                    {selectedEvents.map((event) => (
+                      <div
+                        key={event.id}
+                        className="rounded-2xl border border-[#E6E6E2] bg-[#F4F3EF] px-4 py-3 text-sm text-[#4A4A4A]"
+                      >
+                        <div className="flex flex-col gap-2">
+                          <p
+                            className="font-semibold leading-snug"
+                            title={event.title}
+                            style={{
+                              display: "-webkit-box",
+                              WebkitLineClamp: 2,
+                              WebkitBoxOrient: "vertical",
+                              overflow: "hidden",
+                            }}
+                          >
+                            {event.title}
+                          </p>
+                          <div className="flex items-center gap-2 text-xs text-[#8C8C8C]">
+                            <span className="rounded-full border border-[#C79AA5] px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.2em] text-[#C79AA5]">
+                              Due
+                            </span>
+                            <span>•</span>
+                            <span>
                               {event.endAt
                                 ? `${formatTime(event.startAt)} - ${formatTime(event.endAt)}`
                                 : formatTime(event.startAt)}
-                            </p>
+                            </span>
                           </div>
-                        <p className="text-xs uppercase tracking-[0.2em] text-[#6b7a7e]">
-                          {event.className || "Calendar event"}
-                        </p>
-                      </div>
-                      {event.source === "manual" && (
-                        <button
-                          onClick={() => removeEvent(event.id)}
-                          className="text-xs uppercase tracking-[0.2em] text-[#c1735f] hover:text-[#0f1b1d]"
-                        >
-                          Remove
-                        </button>
-                      )}
-                    </div>
-                    {event.description && (
-                      <p
-                        className={`mt-2 text-xs text-[#5c6b6f] ${
-                          expandedEventIds.has(event.id)
-                            ? "whitespace-pre-line"
-                            : "max-h-16 overflow-hidden"
-                        }`}
-                      >
-                        {event.description}
-                      </p>
-                    )}
-                    {(event.description || event.url) && (
-                      <button
-                        type="button"
-                        onClick={() => toggleEventDetails(event.id)}
-                        className="mt-2 text-xs font-semibold uppercase tracking-[0.2em] text-[#0f1b1d] underline decoration-[#ffd18b] underline-offset-4"
-                      >
-                        {expandedEventIds.has(event.id) ? "Show less" : "Show more"}
-                      </button>
-                    )}
-                      {event.url && (
-                        <div className="mt-2 flex flex-wrap gap-3">
-                          <button
-                            type="button"
-                            onClick={() => copyEventLink(event.url!)}
-                            className="text-xs font-semibold uppercase tracking-[0.2em] text-[#0f1b1d] underline decoration-[#ffd18b] underline-offset-4"
-                          >
-                            Copy link
-                          </button>
-                          <a
-                            href={event.url}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-xs font-semibold uppercase tracking-[0.2em] text-[#0f1b1d] underline decoration-[#ffd18b] underline-offset-4"
-                          >
-                            Open link
-                          </a>
+                          <div className="flex flex-wrap gap-2 border-t border-[#E6E6E2] pt-2">
+                            <button
+                              type="button"
+                              className="rounded-full border border-[#E6E6E2] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#4A4A4A] hover:border-[#1E1E1E] hover:text-[#1E1E1E]"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              className="rounded-full border border-[#E6E6E2] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#4A4A4A] hover:border-[#1E1E1E] hover:text-[#1E1E1E]"
+                            >
+                              Reschedule
+                            </button>
+                            <button
+                              type="button"
+                              className="rounded-full border border-[#E6E6E2] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#4A4A4A] hover:border-[#1E1E1E] hover:text-[#1E1E1E]"
+                            >
+                              Done
+                            </button>
+                          </div>
                         </div>
-                      )}
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-            </div>
+                  <div className="mt-4 grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      className="rounded-full border border-[#1E1E1E] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#1E1E1E] transition hover:-translate-y-0.5 hover:bg-[#1E1E1E] hover:text-[#F4F3EF]"
+                      onClick={syncCalendar}
+                      disabled={isSyncing}
+                    >
+                      {isSyncing ? "Syncing..." : "Sync D2L"}
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-full border border-[#8C8C8C] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#4A4A4A] transition hover:-translate-y-0.5 hover:border-[#1E1E1E] hover:text-[#1E1E1E]"
+                      onClick={fetchEvents}
+                      disabled={isLoading}
+                    >
+                      {isLoading ? "Refreshing..." : "Refresh"}
+                    </button>
+                  </div>
+                </div>
+              )}
 
-              <div className="rounded-3xl border border-[#e2d8c8] bg-white/90 p-6 shadow-[0_18px_45px_rgba(15,27,29,0.1)] backdrop-blur">
-                <h3 className="text-xl font-semibold text-[#0f1b1d] font-[var(--font-display)]">
-                  Checklist
-                </h3>
-              <p className="text-sm uppercase tracking-[0.2em] text-[#6b7a7e]">
-                Calendar items appear automatically
-              </p>
-
-              <div className="mt-4 flex gap-2">
-                <input
-                  value={taskTitle}
-                  onChange={(event) => setTaskTitle(event.target.value)}
-                  placeholder="Add a task..."
-                  className="flex-1 rounded-full border border-[#d1c2ae] bg-white px-4 py-2 text-sm text-[#2c3a3d] focus:border-[#0f1b1d] focus:outline-none"
-                />
-                <button
-                  className="rounded-full border border-[#0f1b1d] px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-[#0f1b1d] transition hover:-translate-y-0.5 hover:bg-[#0f1b1d] hover:text-[#f7f1e6]"
-                  onClick={addTask}
-                >
-                  Add
-                </button>
-              </div>
-                <div className="mt-2">
-                  <div className="flex flex-col gap-2 sm:flex-row">
+              {sidebarMode === "tasks" && (
+                <div className="rounded-3xl border border-[#E6E6E2] bg-[#F4F3EF]/95 p-5 shadow-[0_18px_45px_rgba(15,27,29,0.1)] backdrop-blur">
+                  <div className="flex items-center justify-between gap-3">
+                    <h3 className="text-lg font-semibold text-[#1E1E1E] font-[var(--font-display)]">
+                      Checklist
+                    </h3>
+                    <button
+                      type="button"
+                      className="flex h-9 w-9 items-center justify-center rounded-full border border-[#1E1E1E] text-sm font-semibold text-[#1E1E1E] transition hover:-translate-y-0.5 hover:bg-[#1E1E1E] hover:text-[#F4F3EF]"
+                      onClick={addTask}
+                      aria-label="Add task"
+                    >
+                      +
+                    </button>
+                  </div>
+                  <div className="mt-4 flex flex-col gap-3">
+                    <input
+                      value={taskTitle}
+                      onChange={(event) => setTaskTitle(event.target.value)}
+                      placeholder="Add a task..."
+                      className="w-full rounded-full border border-[#E6E6E2] bg-[#F4F3EF] px-4 py-3 text-sm text-[#4A4A4A] focus:border-[#1E1E1E] focus:outline-none"
+                    />
                     <select
                       value={taskClass}
                       onChange={(event) => setTaskClass(event.target.value)}
-                      className="w-full flex-1 rounded-full border border-[#d1c2ae] bg-white px-4 py-2 text-sm text-[#2c3a3d] focus:border-[#0f1b1d] focus:outline-none"
+                      className="w-full rounded-full border border-[#E6E6E2] bg-[#F4F3EF] px-4 py-2 text-sm text-[#4A4A4A] focus:border-[#1E1E1E] focus:outline-none"
                     >
                       <option value="">No class</option>
                       {sortedClasses.map((item) => (
@@ -960,133 +996,370 @@ export default function Home() {
                       ))}
                     </select>
                   </div>
+                  <div className="mt-4 flex flex-col gap-3">
+                    {tasks.length === 0 && (
+                      <p className="text-sm text-[#8C8C8C]">Nothing on the list yet.</p>
+                    )}
+                    {tasks.map((task) => (
+                      <div
+                        key={task.id}
+                        draggable
+                        onDragStart={(event) => {
+                          event.dataTransfer.setData("text/plain", task.id);
+                        }}
+                        className="flex items-start gap-3 rounded-2xl border border-[#E6E6E2] bg-[#F4F3EF] px-4 py-3 text-sm text-[#4A4A4A] hover:border-[#1E1E1E]"
+                      >
+                        <button
+                          type="button"
+                          onClick={() => toggleTask(task.id)}
+                          aria-label={task.done ? "Mark incomplete" : "Mark complete"}
+                          className={`mt-1 flex h-5 w-5 items-center justify-center rounded border text-[10px] ${
+                            task.done
+                              ? "border-[#1E1E1E] bg-[#1E1E1E] text-[#F4F3EF]"
+                              : "border-[#E6E6E2] text-transparent"
+                          }`}
+                        >
+                          ?
+                        </button>
+                        <div className="flex min-w-0 flex-1 flex-col">
+                          <span
+                            className={`font-semibold ${
+                              task.done ? "line-through text-[#8C8C8C]" : ""
+                            }`}
+                          >
+                            {task.title}
+                          </span>
+                          <span className="text-[10px] uppercase tracking-[0.2em] text-[#8C8C8C]">
+                            {task.className || "Personal task"}
+                          </span>
+                        </div>
+                        <button
+                          onClick={() => removeTask(task.id)}
+                          className="shrink-0 text-[10px] uppercase tracking-[0.2em] text-[#C79AA5] hover:text-[#1E1E1E]"
+                          aria-label="Remove task"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ))}
+                  </div>
                 </div>
+              )}
 
-              <div className="mt-4 flex flex-col gap-3">
-                {checklistItems.length === 0 && (
-                  <p className="text-sm text-[#5a6a6e]">
-                    Nothing on the list yet.
-                  </p>
-                )}
-                {checklistItems.map((item) => (
-                  <div
-                    key={item.id}
-                    role={item.source === "task" ? "button" : undefined}
-                    tabIndex={item.source === "task" ? 0 : undefined}
-                    onClick={() =>
-                      item.source === "task" ? toggleTask(item.id) : null
-                    }
-                    onKeyDown={(event) => {
-                      if (item.source !== "task") return;
-                      if (event.key === "Enter" || event.key === " ") {
-                        event.preventDefault();
-                        toggleTask(item.id);
-                      }
-                    }}
-                    className={`flex items-center gap-3 rounded-2xl border px-4 py-3 text-left text-sm transition ${
-                      item.source === "event"
-                        ? "border-[#efe6d9] bg-[#f8f2e9] text-[#2c3a3d]"
-                        : "border-[#efe6d9] bg-white text-[#2c3a3d] hover:border-[#0f1b1d]"
-                    }`}
-                  >
-                    <span
-                      className={`flex h-5 w-5 items-center justify-center rounded-full border text-xs ${
-                        item.source === "event"
-                          ? "border-[#c9b79f] text-transparent"
-                          : item.done
-                            ? "border-[#0f1b1d] bg-[#0f1b1d] text-[#f7f1e6]"
-                            : "border-[#c9b79f] text-transparent"
+              {sidebarMode === "classes" && (
+                <div className="rounded-3xl border border-[#E6E6E2] bg-[#F4F3EF]/95 p-5 shadow-[0_18px_45px_rgba(15,27,29,0.1)] backdrop-blur">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-lg font-semibold text-[#1E1E1E] font-[var(--font-display)]">
+                      Classes
+                    </h3>
+                    <button
+                      type="button"
+                      className="rounded-full border border-[#E6E6E2] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#4A4A4A] hover:border-[#1E1E1E] hover:text-[#1E1E1E]"
+                      onClick={() => setIsClassManagerOpen(true)}
+                    >
+                      Manage
+                    </button>
+                  </div>
+                  <div className="mt-3 flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-[0.2em]">
+                    <span className="text-[#8C8C8C]">Filter:</span>
+                    <button
+                      type="button"
+                      onClick={() => setClassFilter("")}
+                      className={`rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] ${
+                        classFilter === ""
+                          ? "border-[#1E1E1E] bg-[#1E1E1E] text-[#F4F3EF]"
+                          : "border-[#E6E6E2] text-[#4A4A4A] hover:border-[#1E1E1E]"
                       }`}
                     >
-                      x
-                    </span>
-                    <div className="flex flex-1 flex-col">
-                      <span
-                        className={`flex items-center gap-2 ${
-                          item.source === "task" && item.done
-                            ? "line-through text-[#8c9a9e]"
-                            : ""
-                        }`}
-                      >
-                        {item.className && (
-                          <span
-                            className={`h-2 w-2 rounded-full ${getClassColor(
-                              item.className
-                            )}`}
-                          />
-                        )}
-                        <span className="font-semibold">{item.title}</span>
-                      </span>
-                      <span className="text-[10px] uppercase tracking-[0.2em] text-[#6b7a7e]">
-                        {item.source === "event"
-                          ? `${item.className || "Calendar"} - ${formatTime(item.time)}`
-                          : item.className || "Personal task"}
-                      </span>
-                    </div>
-                    {item.source === "task" && (
-                      <button
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          removeTask(item.id);
-                        }}
-                        className="text-xs uppercase tracking-[0.2em] text-[#c1735f] hover:text-[#0f1b1d]"
-                        aria-label="Remove task"
-                      >
-                        Remove
-                      </button>
-                    )}
+                      All
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setClassFilter("__none__")}
+                      className={`rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] ${
+                        classFilter === "__none__"
+                          ? "border-[#1E1E1E] bg-[#1E1E1E] text-[#F4F3EF]"
+                          : "border-[#E6E6E2] text-[#4A4A4A] hover:border-[#1E1E1E]"
+                      }`}
+                    >
+                      None
+                    </button>
                   </div>
-                ))}
+                  <div className="mt-4 max-h-[570px] flex flex-col gap-3 overflow-y-auto pr-1">
+                    {sortedClasses.length === 0 && (
+                      <p className="text-sm text-[#8C8C8C]">No classes yet.</p>
+                    )}
+                    {sortedClasses.map((item) => {
+                      const next = upcomingByClass.get(item.name);
+                      const isExpanded = expandedClassIds.has(item.id);
+                      const list = eventsByClassName.get(item.name) ?? [];
+                      const upcomingList = list.filter(
+                        (event) => new Date(event.startAt).getTime() >= Date.now()
+                      );
+                      return (
+                        <div
+                          key={item.id}
+                          className="rounded-2xl border border-[#E6E6E2] bg-[#F4F3EF] px-4 py-3"
+                        >
+                          <button
+                            type="button"
+                            onClick={() => {
+                              toggleClassExpand(item.id);
+                              setClassFilter(item.name);
+                            }}
+                            className="flex w-full items-center justify-between text-left text-sm font-semibold text-[#1E1E1E]"
+                          >
+                            <span>{item.name}</span>
+                            <span className="text-xs text-[#8C8C8C]">
+                              {isExpanded ? "−" : "+"}
+                            </span>
+                          </button>
+                          {!isExpanded && (
+                            <div className="mt-3 flex items-start gap-3 text-sm text-[#4A4A4A]">
+                              <div className="mt-1 h-2 w-2 rounded-full bg-[#C79AA5]" />
+                              <div>
+                                {next ? (
+                                  <>
+                                    <p className="font-semibold">{next.title}</p>
+                                    <p className="text-[10px] uppercase tracking-[0.2em] text-[#8C8C8C]">
+                                      {formatTime(next.startAt)}
+                                    </p>
+                                  </>
+                                ) : (
+                                  <p className="text-sm text-[#8C8C8C]">
+                                    No upcoming items
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                          {isExpanded && (
+                            <div className="mt-3 flex flex-col gap-2 border-l border-[#E6E6E2] pl-4">
+                              {upcomingList.slice(0, 4).map((event) => (
+                                <div key={event.id} className="text-sm text-[#4A4A4A]">
+                                  <p className="font-semibold">{event.title}</p>
+                                  <p className="text-[10px] uppercase tracking-[0.2em] text-[#8C8C8C]">
+                                    {formatTime(event.startAt)}
+                                  </p>
+                                </div>
+                              ))}
+                              {upcomingList.length === 0 && (
+                                <p className="text-sm text-[#8C8C8C]">
+                                  No upcoming items
+                                </p>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </aside>
+
+        <div className="flex h-full flex-col gap-4 overflow-hidden">
+          <section className="grid flex-1 gap-4 overflow-hidden">
+            <div className="h-full overflow-hidden rounded-3xl border border-[#E6E6E2] bg-[linear-gradient(180deg,#FAF9F6_0%,#F2F0EA_100%)] p-6 shadow-[0_20px_60px_rgba(15,27,29,0.12)] backdrop-blur xl:p-7">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-wrap items-center gap-2.5">
+                <button
+                  className="rounded-full border border-[#E6E6E2] px-3 py-2 text-xs font-semibold text-[#4A4A4A] transition hover:border-[#1E1E1E] hover:text-[#1E1E1E]"
+                  onClick={() => {
+                    const today = new Date();
+                    setViewDate(new Date(today.getFullYear(), today.getMonth(), 1));
+                    setSelectedDate(today);
+                    setSidebarMode("day");
+                    setIsSidebarOpen(true);
+                  }}
+                >
+                  Today
+                </button>
+                <div className="flex items-center gap-2">
+                  <div className="flex flex-col">
+                    <h2 className="text-[22px] font-semibold text-[#1E1E1E] font-[var(--font-display)]">
+                      {monthLabel}
+                    </h2>
+                    <div className="mt-2 h-[3px] w-[60px] rounded-full bg-[#B9AFC8]" />
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button
+                      className="flex h-8 w-8 items-center justify-center rounded-full border border-[#E6E6E2] text-xs font-semibold text-[#4A4A4A] transition hover:border-[#1E1E1E] hover:text-[#1E1E1E]"
+                      onClick={goToPreviousMonth}
+                    >
+                      {"<"}
+                    </button>
+                    <button
+                      className="flex h-8 w-8 items-center justify-center rounded-full border border-[#E6E6E2] text-xs font-semibold text-[#4A4A4A] transition hover:border-[#1E1E1E] hover:text-[#1E1E1E]"
+                      onClick={goToNextMonth}
+                    >
+                      {">"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <div className="text-[11px] text-[#8C8C8C]">
+                {filteredEventCount} event(s)
+                {classFilter && (
+                  <span className="text-[#8C8C8C]"> · {totalEventCount} total</span>
+                )}
               </div>
             </div>
 
-            <button
-              className="rounded-full border border-[#0f1b1d] px-5 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-[#0f1b1d] transition hover:-translate-y-0.5 hover:bg-[#0f1b1d] hover:text-[#f7f1e6]"
-              onClick={() => setIsAddEventOpen(true)}
-            >
-              Add to Calendar
-            </button>
+            <div className="mt-4 grid grid-cols-7 gap-2.5 text-[11px] uppercase tracking-[0.2em] text-[#8C8C8C]">
+              {weekDays.map((day) => (
+                <div key={day} className="text-center">
+                  {day}
+                </div>
+              ))}
+            </div>
 
+            <div className="mt-3.5 grid grid-cols-7 gap-2.5">
+              {days.map((day, index) => {
+                const key = toDateKey(day);
+                const dayEvents = eventsByDay.get(key) ?? [];
+                const isCurrentMonth = day.getMonth() === viewDate.getMonth();
+                const isSelected = key === selectedKey;
+                const isToday = key === toDateKey(new Date());
+                const weekIndex = Math.floor(index / 7);
+
+                return (
+                  <button
+                    key={`${key}-${index}`}
+                    className={`group relative flex min-h-[122px] flex-col gap-2 rounded-2xl border p-4 text-left transition-all duration-200 cursor-pointer hover:scale-[1.02] ${
+                      isSelected
+                        ? "border-[#1E1E1E] bg-[#1E1E1E] text-[#F4F3EF] ring-1 ring-[#B9AFC8]"
+                        : isToday
+                          ? "border-[#1E1E1E] bg-[#1E1E1E] text-[#F4F3EF] shadow-[0_8px_24px_rgba(0,0,0,0.25)]"
+                          : "border-[#E6E6E2] bg-[#F7F6F2] text-[#1E1E1E] hover:border-[#1E1E1E]"
+                    } ${isCurrentMonth ? "opacity-100" : "opacity-40"} ${
+                      hoveredWeekIndex === weekIndex && !isSelected
+                        ? "bg-[#C8BDD6]/5"
+                        : ""
+                    } shadow-[inset_0_1px_0_rgba(255,255,255,0.7),0_1px_2px_rgba(0,0,0,0.04)] hover:-translate-y-0.5 hover:shadow-[0_6px_16px_rgba(0,0,0,0.06)] animate-[rise_0.6s_ease-out]`}
+                    style={{ animationDelay: `${index * 12}ms` }}
+                    onClick={() => {
+                      setSelectedDate(day);
+                      setSidebarMode("day");
+                      setIsSidebarOpen(true);
+                    }}
+                    onDragOver={(event) => event.preventDefault()}
+                    onDrop={(event) => {
+                      event.preventDefault();
+                      const taskId = event.dataTransfer.getData("text/plain");
+                      const task = tasks.find((item) => item.id === taskId);
+                      if (task) {
+                        setEventTitle(task.title);
+                        setEventDate(toDateInput(day));
+                        setIsAddEventOpen(true);
+                      }
+                    }}
+                    onMouseEnter={() => setHoveredWeekIndex(weekIndex)}
+                    onMouseLeave={() => setHoveredWeekIndex(null)}
+                  >
+                    <div className="flex items-center justify-between text-[11px] font-semibold uppercase tracking-[0.2em]">
+                      <span>{day.getDate()}</span>
+                      {isToday && (
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-[10px] ${
+                            isSelected || isToday
+                              ? "bg-[#F4F3EF] text-[#1E1E1E]"
+                              : "bg-[#1E1E1E] text-[#F4F3EF]"
+                          }`}
+                        >
+                          Today
+                        </span>
+                      )}
+                    </div>
+                    {dayEvents.length > 2 && (
+                      <div
+                        role="button"
+                        tabIndex={0}
+                        onClick={(eventClick) => {
+                          eventClick.stopPropagation();
+                          openDayPopup(dayEvents);
+                        }}
+                        onKeyDown={(eventKey) => {
+                          if (eventKey.key === "Enter" || eventKey.key === " ") {
+                            eventKey.preventDefault();
+                            eventKey.stopPropagation();
+                            openDayPopup(dayEvents);
+                          }
+                        }}
+                        className="absolute right-2 top-2 flex items-center gap-1 rounded-full border border-[#E6E6E2] bg-[#F4F3EF]/90 px-2 py-0.5 text-[9px] font-semibold text-[#4A4A4A] shadow-[0_2px_6px_rgba(0,0,0,0.08)]"
+                      >
+                        <span className="flex gap-0.5">
+                          <span className="h-1.5 w-1.5 rounded-full bg-[#C79AA5]" />
+                          <span className="h-1.5 w-1.5 rounded-full bg-[#C79AA5]" />
+                          <span className="h-1.5 w-1.5 rounded-full bg-[#C79AA5]" />
+                        </span>
+                        +{dayEvents.length - 2}
+                      </div>
+                    )}
+                    <div className="flex flex-1 flex-col gap-2">
+                      {dayEvents.slice(0, 2).map((event) => (
+                        <div
+                          role="button"
+                          tabIndex={0}
+                          key={event.id}
+                          onClick={(eventClick) => {
+                            eventClick.stopPropagation();
+                            openEventPopup(event);
+                          }}
+                          onKeyDown={(eventKey) => {
+                            if (eventKey.key === "Enter" || eventKey.key === " ") {
+                              eventKey.preventDefault();
+                              eventKey.stopPropagation();
+                              openEventPopup(event);
+                            }
+                          }}
+                          className={`rounded-lg border-l-4 border-[#C79AA5] px-2 py-1 pl-2.5 text-left text-[11px] transition ${
+                            isSelected
+                              ? "bg-[#C8BDD6]/20 text-[#F4F3EF]"
+                              : "bg-[#F4F3EF] text-[#4A4A4A]"
+                          }`}
+                        >
+                          <p className="truncate font-semibold">{event.title}</p>
+                        </div>
+                      ))}
+                      {dayEvents.length > 2 && (
+                        <p className="text-[10px] uppercase tracking-[0.2em] opacity-70">
+                          +{dayEvents.length - 2} more
+                        </p>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
           </div>
-        </div>
-      )}
 
-      <footer className="mx-auto w-full max-w-[1200px] px-6 pb-12 sm:px-10 xl:max-w-[1400px] 2xl:max-w-[1600px]">
-        <div className="rounded-3xl border border-[#e2d8c8] bg-[#0f1b1d] p-6 text-[#f7f1e6]">
-          <p className="text-xs uppercase tracking-[0.3em] text-[#ffd18b]">
-            Sync Status
-          </p>
-          <p className="mt-2 text-sm text-[#f7f1e6]">
-            {message ?? "Ready when you are."}
-          </p>
-          <p className="mt-2 text-xs text-[#c8d4d1]">
-            Last sync: {lastSyncAt ? formatDateTime(lastSyncAt) : "Not yet"}
-          </p>
-          <p className="mt-4 text-xs text-[#c8d4d1]">
-            Feed: <span className="text-[#ffd18b]">.ics</span> via server
-          </p>
+          </section>
         </div>
-      </footer>
+
+      </main>
 
       {isAddEventOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-10">
           <button
-            className="absolute inset-0 bg-[#0f1b1d]/50 backdrop-blur-sm"
+            className="absolute inset-0 bg-[#1E1E1E]/50 backdrop-blur-sm"
             aria-label="Close add event popup"
             onClick={() => setIsAddEventOpen(false)}
           />
-          <div className="relative w-full max-w-lg rounded-3xl border border-[#e2d8c8] bg-white/95 p-6 shadow-[0_30px_80px_rgba(15,27,29,0.25)] backdrop-blur">
+          <div className="relative w-full max-w-lg rounded-3xl border border-[#E6E6E2] bg-[#F4F3EF]/97 p-6 shadow-[0_30px_80px_rgba(15,27,29,0.25)] backdrop-blur">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <h3 className="text-2xl font-semibold text-[#0f1b1d] font-[var(--font-display)]">
+                <h3 className="text-2xl font-semibold text-[#1E1E1E] font-[var(--font-display)]">
                   Add to Calendar
                 </h3>
-                <p className="text-sm uppercase tracking-[0.2em] text-[#6b7a7e]">
+                <p className="text-sm uppercase tracking-[0.2em] text-[#8C8C8C]">
                   Personal events stay local
                 </p>
               </div>
               <button
-                className="rounded-full border border-[#d1c2ae] px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-[#3d4b4f] transition hover:border-[#0f1b1d] hover:text-[#0f1b1d]"
+                className="rounded-full border border-[#E6E6E2] px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-[#4A4A4A] transition hover:border-[#1E1E1E] hover:text-[#1E1E1E]"
                 onClick={() => setIsAddEventOpen(false)}
               >
                 Close
@@ -1097,12 +1370,12 @@ export default function Home() {
                 value={eventTitle}
                 onChange={(event) => setEventTitle(event.target.value)}
                 placeholder="Event title"
-                className="w-full rounded-full border border-[#d1c2ae] bg-white px-4 py-2 text-sm text-[#2c3a3d] focus:border-[#0f1b1d] focus:outline-none"
+                className="w-full rounded-full border border-[#E6E6E2] bg-[#F4F3EF] px-4 py-2 text-sm text-[#4A4A4A] focus:border-[#1E1E1E] focus:outline-none"
               />
               <select
                 value={eventClass}
                 onChange={(event) => setEventClass(event.target.value)}
-                className="w-full rounded-full border border-[#d1c2ae] bg-white px-4 py-2 text-sm text-[#2c3a3d] focus:border-[#0f1b1d] focus:outline-none"
+                className="w-full rounded-full border border-[#E6E6E2] bg-[#F4F3EF] px-4 py-2 text-sm text-[#4A4A4A] focus:border-[#1E1E1E] focus:outline-none"
               >
                 <option value="">No class</option>
                 {sortedClasses.map((item) => (
@@ -1116,13 +1389,13 @@ export default function Home() {
                   type="date"
                   value={eventDate}
                   onChange={(event) => setEventDate(event.target.value)}
-                  className="rounded-full border border-[#d1c2ae] bg-white px-4 py-2 text-sm text-[#2c3a3d] focus:border-[#0f1b1d] focus:outline-none"
+                  className="rounded-full border border-[#E6E6E2] bg-[#F4F3EF] px-4 py-2 text-sm text-[#4A4A4A] focus:border-[#1E1E1E] focus:outline-none"
                 />
                 <input
                   type="time"
                   value={eventTime}
                   onChange={(event) => setEventTime(event.target.value)}
-                  className="rounded-full border border-[#d1c2ae] bg-white px-4 py-2 text-sm text-[#2c3a3d] focus:border-[#0f1b1d] focus:outline-none"
+                  className="rounded-full border border-[#E6E6E2] bg-[#F4F3EF] px-4 py-2 text-sm text-[#4A4A4A] focus:border-[#1E1E1E] focus:outline-none"
                 />
               </div>
               <input
@@ -1130,17 +1403,17 @@ export default function Home() {
                 value={eventEndTime}
                 onChange={(event) => setEventEndTime(event.target.value)}
                 placeholder="End time (optional)"
-                className="w-full rounded-full border border-[#d1c2ae] bg-white px-4 py-2 text-sm text-[#2c3a3d] focus:border-[#0f1b1d] focus:outline-none"
+                className="w-full rounded-full border border-[#E6E6E2] bg-[#F4F3EF] px-4 py-2 text-sm text-[#4A4A4A] focus:border-[#1E1E1E] focus:outline-none"
               />
               <textarea
                 value={eventDescription}
                 onChange={(event) => setEventDescription(event.target.value)}
                 placeholder="Notes (optional)"
                 rows={3}
-                className="w-full rounded-2xl border border-[#d1c2ae] bg-white px-4 py-2 text-sm text-[#2c3a3d] focus:border-[#0f1b1d] focus:outline-none"
+                className="w-full rounded-2xl border border-[#E6E6E2] bg-[#F4F3EF] px-4 py-2 text-sm text-[#4A4A4A] focus:border-[#1E1E1E] focus:outline-none"
               />
               <button
-                className="rounded-full border border-[#0f1b1d] px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-[#0f1b1d] transition hover:-translate-y-0.5 hover:bg-[#0f1b1d] hover:text-[#f7f1e6]"
+                className="rounded-full border border-[#1E1E1E] px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-[#1E1E1E] transition hover:-translate-y-0.5 hover:bg-[#1E1E1E] hover:text-[#F4F3EF]"
                 onClick={addEvent}
               >
                 Add event
@@ -1150,25 +1423,189 @@ export default function Home() {
         </div>
       )}
 
+      {isErrorMessage && message && (
+        <div className="fixed inset-0 z-[60] flex items-start justify-center px-4 pt-6">
+          <div className="w-full max-w-lg rounded-2xl border border-[#C79AA5] bg-[#F4F3EF] px-5 py-4 text-sm text-[#4A4A4A] shadow-[0_20px_60px_rgba(15,27,29,0.18)]">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#C79AA5]">
+                  Error
+                </p>
+                <p className="mt-1">{message}</p>
+              </div>
+              <button
+                type="button"
+                className="rounded-full border border-[#E6E6E2] px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-[#4A4A4A] transition hover:border-[#1E1E1E] hover:text-[#1E1E1E]"
+                onClick={() => {
+                  setIsErrorMessage(false);
+                  setMessage(null);
+                }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isEventPopupOpen && activeEvent && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-10">
+          <button
+            className="absolute inset-0 bg-[#1E1E1E]/50 backdrop-blur-sm"
+            aria-label="Close event popup"
+            onClick={() => setIsEventPopupOpen(false)}
+          />
+          <div className="relative w-full max-w-lg rounded-3xl border border-[#E6E6E2] bg-[#F4F3EF]/97 p-6 shadow-[0_30px_80px_rgba(15,27,29,0.25)] backdrop-blur">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-2xl font-semibold text-[#1E1E1E] font-[var(--font-display)]">
+                  {activeEvent.title}
+                </h3>
+                <p className="text-sm uppercase tracking-[0.2em] text-[#8C8C8C]">
+                  {activeEvent.className || "Calendar event"}
+                </p>
+              </div>
+              <button
+                className="rounded-full border border-[#E6E6E2] px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-[#4A4A4A] transition hover:border-[#1E1E1E] hover:text-[#1E1E1E]"
+                onClick={() => setIsEventPopupOpen(false)}
+              >
+                Close
+              </button>
+            </div>
+            <div className="mt-4 flex flex-col gap-2 text-sm text-[#4A4A4A]">
+              <p className="font-semibold">
+                {activeEvent.endAt
+                  ? `${formatTime(activeEvent.startAt)} - ${formatTime(
+                      activeEvent.endAt
+                    )}`
+                  : formatTime(activeEvent.startAt)}
+              </p>
+              <p className="text-xs uppercase tracking-[0.2em] text-[#8C8C8C]">
+                {new Date(activeEvent.startAt).toLocaleDateString([], {
+                  weekday: "short",
+                  month: "short",
+                  day: "numeric",
+                  year: "numeric",
+                })}
+              </p>
+              {activeEvent.description && (
+                <p className="mt-2 text-sm text-[#5c6b6f] whitespace-pre-line">
+                  {activeEvent.description}
+                </p>
+              )}
+              {activeEvent.url && (
+                <div className="mt-2 flex flex-wrap gap-3">
+                  <button
+                    type="button"
+                    onClick={() => copyEventLink(activeEvent.url!)}
+                    className="text-xs font-semibold uppercase tracking-[0.2em] text-[#1E1E1E] underline decoration-[#C79AA5] underline-offset-4"
+                  >
+                    Copy link
+                  </button>
+                  <a
+                    href={activeEvent.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-xs font-semibold uppercase tracking-[0.2em] text-[#1E1E1E] underline decoration-[#C79AA5] underline-offset-4"
+                  >
+                    Open link
+                  </a>
+                </div>
+              )}
+            </div>
+            {activeEvent.source === "manual" && (
+              <div className="mt-6 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => {
+                    removeEvent(activeEvent.id);
+                    setIsEventPopupOpen(false);
+                  }}
+                  className="rounded-full border border-[#C79AA5] px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-[#C79AA5] transition hover:-translate-y-0.5 hover:bg-[#C79AA5] hover:text-white"
+                >
+                  Remove event
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {isDayPopupOpen && dayPopupEvents.length > 0 && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-10">
+          <button
+            className="absolute inset-0 bg-[#1E1E1E]/50 backdrop-blur-sm"
+            aria-label="Close day popup"
+            onClick={() => setIsDayPopupOpen(false)}
+          />
+          <div className="relative w-full max-w-lg rounded-3xl border border-[#E6E6E2] bg-[#F4F3EF]/97 p-6 shadow-[0_30px_80px_rgba(15,27,29,0.25)] backdrop-blur">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-2xl font-semibold text-[#1E1E1E] font-[var(--font-display)]">
+                  {new Date(dayPopupEvents[0].startAt).toLocaleDateString([], {
+                    weekday: "short",
+                    month: "short",
+                    day: "numeric",
+                    year: "numeric",
+                  })}
+                </h3>
+                <p className="text-sm uppercase tracking-[0.2em] text-[#8C8C8C]">
+                  {dayPopupEvents.length} event(s)
+                </p>
+              </div>
+              <button
+                className="rounded-full border border-[#E6E6E2] px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-[#4A4A4A] transition hover:border-[#1E1E1E] hover:text-[#1E1E1E]"
+                onClick={() => setIsDayPopupOpen(false)}
+              >
+                Close
+              </button>
+            </div>
+            <div className="mt-4 flex flex-col gap-3">
+              {dayPopupEvents.map((event) => (
+                <button
+                  key={event.id}
+                  type="button"
+                  onClick={() => {
+                    openEventPopup(event);
+                    setIsDayPopupOpen(false);
+                  }}
+                  className="rounded-2xl border border-[#E6E6E2] bg-[#F4F3EF] px-4 py-3 text-left text-sm text-[#4A4A4A] hover:border-[#1E1E1E]"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="font-semibold">{event.title}</span>
+                    <span className="text-[10px] uppercase tracking-[0.2em] text-[#8C8C8C]">
+                      {formatTime(event.startAt)}
+                    </span>
+                  </div>
+                  <p className="text-[10px] uppercase tracking-[0.2em] text-[#8C8C8C]">
+                    {event.className || "Calendar event"}
+                  </p>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {isClassManagerOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-10">
           <button
-            className="absolute inset-0 bg-[#0f1b1d]/50 backdrop-blur-sm"
+            className="absolute inset-0 bg-[#1E1E1E]/50 backdrop-blur-sm"
             aria-label="Close class manager"
             onClick={() => setIsClassManagerOpen(false)}
           />
-          <div className="relative w-full max-w-lg rounded-3xl border border-[#e2d8c8] bg-white/95 p-6 shadow-[0_30px_80px_rgba(15,27,29,0.25)] backdrop-blur">
+          <div className="relative w-full max-w-lg rounded-3xl border border-[#E6E6E2] bg-[#F4F3EF]/97 p-6 shadow-[0_30px_80px_rgba(15,27,29,0.25)] backdrop-blur">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <h3 className="text-2xl font-semibold text-[#0f1b1d] font-[var(--font-display)]">
+                <h3 className="text-2xl font-semibold text-[#1E1E1E] font-[var(--font-display)]">
                   Class categories
                 </h3>
-                <p className="text-sm uppercase tracking-[0.2em] text-[#6b7a7e]">
+                <p className="text-sm uppercase tracking-[0.2em] text-[#8C8C8C]">
                   Add or remove class labels
                 </p>
               </div>
               <button
-                className="rounded-full border border-[#d1c2ae] px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-[#3d4b4f] transition hover:border-[#0f1b1d] hover:text-[#0f1b1d]"
+                className="rounded-full border border-[#E6E6E2] px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-[#4A4A4A] transition hover:border-[#1E1E1E] hover:text-[#1E1E1E]"
                 onClick={() => setIsClassManagerOpen(false)}
               >
                 Close
@@ -1179,10 +1616,10 @@ export default function Home() {
                 value={newClassName}
                 onChange={(event) => setNewClassName(event.target.value)}
                 placeholder="Add a class (e.g., BIO 110)"
-                className="flex-1 rounded-full border border-[#d1c2ae] bg-white px-4 py-2 text-sm text-[#2c3a3d] focus:border-[#0f1b1d] focus:outline-none"
+                className="flex-1 rounded-full border border-[#E6E6E2] bg-[#F4F3EF] px-4 py-2 text-sm text-[#4A4A4A] focus:border-[#1E1E1E] focus:outline-none"
               />
               <button
-                className="rounded-full border border-[#0f1b1d] px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-[#0f1b1d] transition hover:-translate-y-0.5 hover:bg-[#0f1b1d] hover:text-[#f7f1e6]"
+                className="rounded-full border border-[#1E1E1E] px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-[#1E1E1E] transition hover:-translate-y-0.5 hover:bg-[#1E1E1E] hover:text-[#F4F3EF]"
                 onClick={addClass}
               >
                 Add
@@ -1190,19 +1627,19 @@ export default function Home() {
             </div>
             <div className="mt-4 flex flex-col gap-2">
               {sortedClasses.length === 0 && (
-                <p className="text-sm text-[#5a6a6e]">
+                <p className="text-sm text-[#8C8C8C]">
                   No classes yet. Add one to start tagging assignments.
                 </p>
               )}
               {sortedClasses.map((item) => (
                 <div
                   key={item.id}
-                  className="flex items-center justify-between rounded-full border border-[#efe6d9] bg-white px-4 py-2 text-sm text-[#2c3a3d]"
+                  className="flex items-center justify-between rounded-full border border-[#E6E6E2] bg-[#F4F3EF] px-4 py-2 text-sm text-[#4A4A4A]"
                 >
                   <span className="font-semibold">{item.name}</span>
                   <button
                     onClick={() => removeClass(item.id)}
-                    className="text-xs uppercase tracking-[0.2em] text-[#c1735f] hover:text-[#0f1b1d]"
+                    className="text-xs uppercase tracking-[0.2em] text-[#C79AA5] hover:text-[#1E1E1E]"
                   >
                     Remove
                   </button>
@@ -1215,5 +1652,3 @@ export default function Home() {
     </div>
   );
 }
-
-

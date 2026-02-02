@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
 import { addManualEvent, getEvents, removeManualEvent } from "@/lib/eventStore";
 
-export const runtime = "nodejs";
-
 export async function GET() {
   return NextResponse.json({ events: getEvents() });
 }

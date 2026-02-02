@@ -1,20 +1,15 @@
-import type { PrismaClient as PrismaClientType } from "@prisma/client";
+// @ts-nocheck
+// Force the binary engine before Prisma Client is loaded.
+process.env.PRISMA_CLIENT_ENGINE_TYPE = "binary";
+process.env.PRISMA_ENGINE_TYPE = "binary";
+process.env.PRISMA_QUERY_ENGINE_TYPE = "binary";
 
-if (process.env.PRISMA_CLIENT_ENGINE_TYPE !== "binary") {
-  // Force the binary engine before Prisma Client is loaded.
-  process.env.PRISMA_CLIENT_ENGINE_TYPE = "binary";
-}
+const { PrismaClient } = require("@prisma/client");
 
-const { PrismaClient } = require("@prisma/client") as {
-  PrismaClient: typeof import("@prisma/client").PrismaClient;
-};
-
-const globalForPrisma = globalThis as unknown as {
-  prisma?: PrismaClientType;
-};
+const globalForPrisma = globalThis;
 
 export const prisma =
-  globalForPrisma.prisma ??
+  globalForPrisma.prisma ||
   new PrismaClient({
     log: process.env.NODE_ENV === "development" ? ["error", "warn"] : ["error"],
   });
