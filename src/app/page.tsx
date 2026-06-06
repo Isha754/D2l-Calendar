@@ -124,6 +124,7 @@ export default function Home() {
   const [activeEvent, setActiveEvent] = useState<EventItem | null>(null);
   const [hoveredWeekIndex, setHoveredWeekIndex] = useState<number | null>(null);
   const [isDayPopupOpen, setIsDayPopupOpen] = useState(false);
+  const [dayPopupDate, setDayPopupDate] = useState<Date | null>(null);
   const [dayPopupEvents, setDayPopupEvents] = useState<EventItem[]>([]);
   const [classFilter, setClassFilter] = useState("");
   const [expandedEventIds, setExpandedEventIds] = useState<Set<string>>(
@@ -461,7 +462,11 @@ export default function Home() {
     setIsEventPopupOpen(true);
   };
 
-  const openDayPopup = (events: EventItem[]) => {
+  const openDayPopup = (day: Date, events: EventItem[]) => {
+    setSelectedDate(day);
+    setSidebarMode("day");
+    setIsSidebarOpen(true);
+    setDayPopupDate(day);
     setDayPopupEvents(events);
     setIsDayPopupOpen(true);
   };
@@ -916,26 +921,6 @@ export default function Home() {
                                 : formatTime(event.startAt)}
                             </span>
                           </div>
-                          <div className="flex flex-wrap gap-2 border-t border-[#E6E6E2] pt-2">
-                            <button
-                              type="button"
-                              className="rounded-full border border-[#E6E6E2] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#4A4A4A] hover:border-[#1E1E1E] hover:text-[#1E1E1E]"
-                            >
-                              Edit
-                            </button>
-                            <button
-                              type="button"
-                              className="rounded-full border border-[#E6E6E2] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#4A4A4A] hover:border-[#1E1E1E] hover:text-[#1E1E1E]"
-                            >
-                              Reschedule
-                            </button>
-                            <button
-                              type="button"
-                              className="rounded-full border border-[#E6E6E2] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#4A4A4A] hover:border-[#1E1E1E] hover:text-[#1E1E1E]"
-                            >
-                              Done
-                            </button>
-                          </div>
                         </div>
                       </div>
                     ))}
@@ -1241,9 +1226,7 @@ export default function Home() {
                     } shadow-[inset_0_1px_0_rgba(255,255,255,0.7),0_1px_2px_rgba(0,0,0,0.04)] hover:-translate-y-0.5 hover:shadow-[0_6px_16px_rgba(0,0,0,0.06)] animate-[rise_0.6s_ease-out]`}
                     style={{ animationDelay: `${index * 12}ms` }}
                     onClick={() => {
-                      setSelectedDate(day);
-                      setSidebarMode("day");
-                      setIsSidebarOpen(true);
+                      openDayPopup(day, dayEvents);
                     }}
                     onDragOver={(event) => event.preventDefault()}
                     onDrop={(event) => {
@@ -1279,13 +1262,13 @@ export default function Home() {
                         tabIndex={0}
                         onClick={(eventClick) => {
                           eventClick.stopPropagation();
-                          openDayPopup(dayEvents);
+                          openDayPopup(day, dayEvents);
                         }}
                         onKeyDown={(eventKey) => {
                           if (eventKey.key === "Enter" || eventKey.key === " ") {
                             eventKey.preventDefault();
                             eventKey.stopPropagation();
-                            openDayPopup(dayEvents);
+                            openDayPopup(day, dayEvents);
                           }
                         }}
                         className="absolute right-2 top-2 flex items-center gap-1 rounded-full border border-[#E6E6E2] bg-[#F4F3EF]/90 px-2 py-0.5 text-[9px] font-semibold text-[#4A4A4A] shadow-[0_2px_6px_rgba(0,0,0,0.08)]"
@@ -1531,18 +1514,18 @@ export default function Home() {
         </div>
       )}
 
-      {isDayPopupOpen && dayPopupEvents.length > 0 && (
+      {isDayPopupOpen && dayPopupDate && (
         <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-10">
           <button
             className="absolute inset-0 bg-[#1E1E1E]/50 backdrop-blur-sm"
             aria-label="Close day popup"
             onClick={() => setIsDayPopupOpen(false)}
           />
-          <div className="relative w-full max-w-lg rounded-3xl border border-[#E6E6E2] bg-[#F4F3EF]/97 p-6 shadow-[0_30px_80px_rgba(15,27,29,0.25)] backdrop-blur">
+          <div className="relative w-full max-w-2xl rounded-3xl border border-[#E6E6E2] bg-[#F4F3EF]/97 p-6 shadow-[0_30px_80px_rgba(15,27,29,0.25)] backdrop-blur">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <h3 className="text-2xl font-semibold text-[#1E1E1E] font-[var(--font-display)]">
-                  {new Date(dayPopupEvents[0].startAt).toLocaleDateString([], {
+                  {dayPopupDate.toLocaleDateString([], {
                     weekday: "short",
                     month: "short",
                     day: "numeric",
@@ -1560,28 +1543,63 @@ export default function Home() {
                 Close
               </button>
             </div>
-            <div className="mt-4 flex flex-col gap-3">
-              {dayPopupEvents.map((event) => (
-                <button
-                  key={event.id}
-                  type="button"
-                  onClick={() => {
-                    openEventPopup(event);
-                    setIsDayPopupOpen(false);
-                  }}
-                  className="rounded-2xl border border-[#E6E6E2] bg-[#F4F3EF] px-4 py-3 text-left text-sm text-[#4A4A4A] hover:border-[#1E1E1E]"
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="font-semibold">{event.title}</span>
-                    <span className="text-[10px] uppercase tracking-[0.2em] text-[#8C8C8C]">
-                      {formatTime(event.startAt)}
-                    </span>
+            <div className="mt-4 max-h-[70vh] overflow-y-auto pr-1">
+              {dayPopupEvents.length === 0 && (
+                <div className="rounded-2xl border border-dashed border-[#D6D1C8] bg-[#F8F7F4] px-4 py-6 text-center text-sm text-[#8C8C8C]">
+                  No events scheduled for this day.
+                </div>
+              )}
+              <div className="flex flex-col gap-3">
+                {dayPopupEvents.map((event) => (
+                  <div
+                    key={event.id}
+                    className="rounded-2xl border border-[#E6E6E2] bg-[#F4F3EF] px-4 py-4 text-left text-sm text-[#4A4A4A]"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-semibold leading-snug text-[#1E1E1E]">
+                          {event.title}
+                        </p>
+                        <p className="mt-1 text-[10px] uppercase tracking-[0.2em] text-[#8C8C8C]">
+                          {event.className || "Calendar event"}
+                        </p>
+                      </div>
+                      <span className="shrink-0 text-[10px] uppercase tracking-[0.2em] text-[#8C8C8C]">
+                        {event.endAt
+                          ? `${formatTime(event.startAt)} - ${formatTime(event.endAt)}`
+                          : formatTime(event.startAt)}
+                      </span>
+                    </div>
+                    {event.description && (
+                      <p className="mt-3 whitespace-pre-line text-sm text-[#5c6b6f]">
+                        {event.description}
+                      </p>
+                    )}
+                    <div className="mt-4 flex flex-wrap gap-3">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          openEventPopup(event);
+                          setIsDayPopupOpen(false);
+                        }}
+                        className="rounded-full border border-[#1E1E1E] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#1E1E1E] transition hover:-translate-y-0.5 hover:bg-[#1E1E1E] hover:text-[#F4F3EF]"
+                      >
+                        View event
+                      </button>
+                      {event.url && (
+                        <a
+                          href={event.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="rounded-full border border-[#E6E6E2] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#4A4A4A] transition hover:border-[#1E1E1E] hover:text-[#1E1E1E]"
+                        >
+                          Open link
+                        </a>
+                      )}
+                    </div>
                   </div>
-                  <p className="text-[10px] uppercase tracking-[0.2em] text-[#8C8C8C]">
-                    {event.className || "Calendar event"}
-                  </p>
-                </button>
-              ))}
+                ))}
+              </div>
             </div>
           </div>
         </div>
