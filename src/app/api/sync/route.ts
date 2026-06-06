@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import ICAL from "ical.js";
-import { setD2lEvents } from "@/lib/eventStore";
+import { setD2lEvents, type EventItem } from "@/lib/eventStore";
 
 export const runtime = "nodejs";
 
@@ -78,7 +78,7 @@ export async function POST() {
     const comp = new ICAL.Component(jcalData);
     const vevents = comp.getAllSubcomponents("vevent");
 
-    const events = [];
+    const events: EventItem[] = [];
 
     for (const ve of vevents) {
       const ev = new ICAL.Event(ve);
