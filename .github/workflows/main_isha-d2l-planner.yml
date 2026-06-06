@@ -29,16 +29,20 @@ jobs:
           npm run build --if-present
           npm run test --if-present
 
+      - name: Prepare standalone deployment package
+        run: |
+          rm -rf deploy
+          mkdir -p deploy/.next deploy/scripts
+          cp -r .next/standalone/. deploy/
+          cp -r .next/static deploy/.next/static
+          cp scripts/start.mjs deploy/scripts/start.mjs
+          if [ -d public ]; then cp -r public deploy/public; fi
+
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
         with:
           name: node-app
-          path: |
-            .
-            !.git
-            !.github
-            !node_modules
-            !.next/cache
+          path: deploy
           include-hidden-files: true
 
   deploy:
@@ -53,6 +57,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: node-app
+          path: deploy-artifact
       
       - name: Login to Azure
         uses: azure/login@v2
@@ -67,5 +72,5 @@ jobs:
         with:
           app-name: 'isha-d2l-planner'
           slot-name: 'Production'
-          package: .
+          package: deploy-artifact
           
